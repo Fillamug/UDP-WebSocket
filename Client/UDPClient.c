@@ -41,7 +41,7 @@ int main() {
     // Filling server information
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(PORT);
-    servaddr.sin_addr.s_addr = inet_addr("192.168.0.5");
+    servaddr.sin_addr.s_addr = inet_addr("192.168.0.2");
 
     len = sizeof(servaddr);
 
@@ -78,7 +78,6 @@ int main() {
 
     // Sending & receiving messages
     if(correct){
-
         while(1){
             // Setting timer
             FD_ZERO(&readfds);
@@ -90,16 +89,22 @@ int main() {
                 return 0;
             }
 
-            if(activity){
-                // Sending message
+            // Sending message
+            if(FD_ISSET(0, &readfds)){
                 clearBuf(buffer, MAXLINE);
                 fgets(buffer, sizeof(buffer), stdin);
 
                 sendto(sockfd, (const char *)buffer, strlen(buffer),
                        MSG_CONFIRM, (const struct sockaddr *) &servaddr,
                        len);
-                printf("Message sent.\n");
-                // Receiving message
+                printf("Message sent : %s\n", buffer);
+                
+                if(strcmp(buffer, "exit\n") == 0){
+                    break;
+                }
+            }
+            // Receiving message
+            if(FD_ISSET(sockfd, &readfds)){
                 clearBuf(buffer, MAXLINE);
                 nBytes = recvfrom(sockfd, (char *)buffer, MAXLINE,
                                   MSG_WAITALL, (struct sockaddr *) &servaddr,
@@ -111,7 +116,6 @@ int main() {
                     break;
                 }
             }
-            else break;
         }
     }
 
