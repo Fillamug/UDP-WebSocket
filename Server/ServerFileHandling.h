@@ -9,7 +9,7 @@ int recvFile(char* file, char* buf, int s);
 
 int parseRequest(char* buffer);
 
-void createResponse(char* buffer, int support, int verServer);
+void createResponse(char* buffer, int support, int valid);
 
 void rmFile(char* file);
 

@@ -11,89 +11,95 @@
 #include <memory.h>
 #include "ServerFileHandling.h"
 
-#define PORT 8080
-#define MAXLINE 1024
-#define VER_SERVER 1
-#define WAIT 15
-
-// Driver code
-int main() {
-    int sockfd, nBytes, activity, len;
-    char buffer[MAXLINE];
+struct ServerSide {
+    int sockfd, len, valid, waitTime, version;
     struct sockaddr_in servaddr, cliaddr;
-    int support = 0;
-    int correct = 0;
-    fd_set readfds;
     struct timeval timeout;
-    FILE* fp;
+    fd_set readfds;
+};
 
-    timeout.tv_sec = WAIT;
-    timeout.tv_usec = 0;
-
+void initializeServerConnection(struct ServerSide* this, char* serverIP, int waitTime){
+    this->valid = 0;
+    this->waitTime = waitTime;
+    this->version = 1;
+    
     // Creating socket file descriptor
-    if ( (sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
+    if ( (this->sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0 ) {
         perror("socket creation failed");
         exit(EXIT_FAILURE);
     }
-
-    memset(&servaddr, 0, sizeof(servaddr));
-    memset(&cliaddr, 0, sizeof(cliaddr));
-
+    
+    memset(&this->servaddr, 0, sizeof(this->servaddr));
+    memset(&this->cliaddr, 0, sizeof(this->cliaddr));
+    
     // Filling server information
-    servaddr.sin_family    = AF_INET; // IPv4
-    servaddr.sin_addr.s_addr = inet_addr("192.168.0.2");
-    servaddr.sin_port = htons(PORT);
-
+    this->servaddr.sin_family = AF_INET; // IPv4
+    this->servaddr.sin_addr.s_addr = inet_addr(serverIP);
+    this->servaddr.sin_port = htons(8080);
+    
     // Bind the socket with the server address
-    if ( bind(sockfd, (const struct sockaddr *)&servaddr,
-            sizeof(servaddr)) < 0 )
+    if ( bind(this->sockfd, (const struct sockaddr *)&this->servaddr,
+            sizeof(this->servaddr)) < 0 )
     {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
 
-    len = sizeof(cliaddr);
+    this->len = sizeof(this->cliaddr);
+}
 
-    support = 0;
-    correct = 0;
-
+void validateServerConnection(struct ServerSide* this){
+    int bufSize = 1024;
+    int nBytes;
+    char buffer[bufSize];
+    
     // Receiving request header
-    clearBuf(buffer, MAXLINE);
-    nBytes = recvfrom(sockfd, (char *)buffer, MAXLINE,
-                      MSG_WAITALL, ( struct sockaddr *) &cliaddr,
-                      &len);
+    nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
+                      MSG_WAITALL, ( struct sockaddr *) &this->cliaddr,
+                      &this->len);
     buffer[nBytes] = '\0';
-    support = parseRequest(buffer);
-    if(support >=1 && support <= VER_SERVER) correct = 1;
+    int support = parseRequest(buffer);
+    if(support >=1 && support <= this->version) this->valid = 1;
+    else{
+        close(this->sockfd);
+        return;
+    }
     
     // Sending response header
-    clearBuf(buffer, MAXLINE);
-    createResponse(buffer, support, VER_SERVER);
-    sendto(sockfd, (const char *)buffer, strlen(buffer),
-                    MSG_CONFIRM, (const struct sockaddr *) &cliaddr,
-                    len);
+    clearBuf(buffer, bufSize);
+    createResponse(buffer, support, this->valid);
+    sendto(this->sockfd, (const char *)buffer, strlen(buffer),
+                    MSG_CONFIRM, (const struct sockaddr *) &this->cliaddr,
+                    this->len);
+}
 
-    // Sending & receiving messages
-    if(correct){
+void useServerConnection(struct ServerSide* this){
+    if(this->valid){
+        int bufSize = 1024;
+        int nBytes;
+        int activity;
+        char buffer[bufSize];
+        
         while(1){
             // Setting timer
-            FD_ZERO(&readfds);
-            FD_SET(sockfd, &readfds);
-            FD_SET(0, &readfds);
-            activity = select( sockfd + 1 , &readfds , NULL , NULL , &timeout);
-            if(activity < 0){
-                close(sockfd);
-                return 0;
+            this->timeout.tv_sec = this->waitTime;
+            this->timeout.tv_usec = 0;
+            FD_ZERO(&this->readfds);
+            FD_SET(this->sockfd, &this->readfds);
+            FD_SET(0, &this->readfds);
+            activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
+            if(activity <= 0){
+                break;
             }
-
+            
             // Sending message
-            if(FD_ISSET(0, &readfds)){
-                clearBuf(buffer, MAXLINE);
+            if(FD_ISSET(0, &this->readfds)){
+                clearBuf(buffer, bufSize);
                 fgets(buffer, sizeof(buffer), stdin);
 
-                sendto(sockfd, (const char *)buffer, strlen(buffer),
-                       MSG_CONFIRM, (const struct sockaddr *) &cliaddr,
-                       len);
+                sendto(this->sockfd, (const char *)buffer, strlen(buffer),
+                       MSG_CONFIRM, (const struct sockaddr *) &this->cliaddr,
+                       this->len);
                 printf("Message sent : %s\n", buffer);
                 
                 if(strcmp(buffer, "exit\n") == 0){
@@ -101,11 +107,11 @@ int main() {
                 }
             }
             // Receiving message
-            if(FD_ISSET(sockfd, &readfds)){
-                clearBuf(buffer, MAXLINE);
-                nBytes = recvfrom(sockfd, (char *)buffer, MAXLINE,
-                                  MSG_WAITALL, (struct sockaddr *) &cliaddr,
-                                  &len);
+            if(FD_ISSET(this->sockfd, &this->readfds)){
+                clearBuf(buffer, bufSize);
+                nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
+                                  MSG_WAITALL, (struct sockaddr *) &this->cliaddr,
+                                  &this->len);
                 buffer[nBytes] = '\0';
                 printf("Client : %s", buffer);
 
@@ -115,7 +121,21 @@ int main() {
             }
         }
     }
+}
 
-    close(sockfd);
+void closeServerConnection(struct ServerSide* this){
+    close(this->sockfd);
+    this->valid = 0;
+}
+
+// Driver code
+int main(){
+    struct ServerSide server;
+    
+    initializeServerConnection(&server, "192.168.0.2", 15);
+    validateServerConnection(&server);
+    useServerConnection(&server);
+    closeServerConnection(&server);
+    
     return 0;
 }

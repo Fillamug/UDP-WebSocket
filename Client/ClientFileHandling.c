@@ -55,7 +55,7 @@ int recvFile(char* file, char* buf, int s)
     return 0;
 }
 
-// Function to parse request header
+// Function to parse response header
 int parseResponse(char* buffer){
     struct json_object* response;
     struct json_object* jsonSocket;

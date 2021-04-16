@@ -72,13 +72,13 @@ int parseRequest(char* buffer){
 }
 
 // Function to create response header
-void createResponse(char* buffer, int support, int verServer){
+void createResponse(char* buffer, int support, int valid){
     struct json_object* response;
     struct json_object* jsonSocket;
     struct json_object* status;
     struct json_object* message;
     struct json_object* version;
-    if(support >=1 && support <= verServer){
+    if(valid){
         status = json_object_new_int(200);
         message = json_object_new_string("OK");
         version = json_object_new_int(support);
