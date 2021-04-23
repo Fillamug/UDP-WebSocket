@@ -48,6 +48,25 @@ void initializeServerConnection(struct ServerSide* this, char* serverIP, int wai
     this->len = sizeof(this->cliaddr);
 }
 
+void closeServerConnection(struct ServerSide* this){
+    close(this->sockfd);
+    this->valid = 0;
+}
+
+int setServerFds(struct ServerSide* this){
+    this->timeout.tv_sec = this->waitTime;
+    this->timeout.tv_usec = 0;
+    FD_ZERO(&this->readfds);
+    FD_SET(this->sockfd, &this->readfds);
+    FD_SET(0, &this->readfds);
+    int activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
+    if(activity <= 0){
+        closeServerConnection(this);
+        return 1;
+    }
+    return 0;
+}
+
 void validateServerConnection(struct ServerSide* this){
     int bufSize = 1024;
     int nBytes;
@@ -61,7 +80,7 @@ void validateServerConnection(struct ServerSide* this){
     int support = parseRequest(buffer);
     if(support >=1 && support <= this->version) this->valid = 1;
     else{
-        close(this->sockfd);
+        closeServerConnection(this);
         return;
     }
     
@@ -73,59 +92,52 @@ void validateServerConnection(struct ServerSide* this){
                     this->len);
 }
 
+void sendToClient(struct ServerSide* this, char* message){
+    sendto(this->sockfd, (const char *)message, strlen(message),
+                       MSG_CONFIRM, (const struct sockaddr *) &this->cliaddr,
+                       this->len);
+}
+
+char* receiveFromClient(struct ServerSide* this){
+    int bufSize = 1024;
+    char buffer[bufSize];
+    int nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
+                      MSG_WAITALL, (struct sockaddr *) &this->cliaddr,
+                      &this->len);
+    buffer[nBytes] = '\0';
+    char* message = buffer;
+    return message;
+}
+
 void useServerConnection(struct ServerSide* this){
     if(this->valid){
-        int bufSize = 1024;
-        int nBytes;
-        int activity;
-        char buffer[bufSize];
-        
         while(1){
-            // Setting timer
-            this->timeout.tv_sec = this->waitTime;
-            this->timeout.tv_usec = 0;
-            FD_ZERO(&this->readfds);
-            FD_SET(this->sockfd, &this->readfds);
-            FD_SET(0, &this->readfds);
-            activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
-            if(activity <= 0){
-                break;
-            }
+            // Setting file descriptors
+            if(setServerFds(this)) break;
             
             // Sending message
             if(FD_ISSET(0, &this->readfds)){
-                clearBuf(buffer, bufSize);
-                fgets(buffer, sizeof(buffer), stdin);
+                char sentMsg[1024];
+                fgets(sentMsg, sizeof(sentMsg), stdin);
 
-                sendto(this->sockfd, (const char *)buffer, strlen(buffer),
-                       MSG_CONFIRM, (const struct sockaddr *) &this->cliaddr,
-                       this->len);
-                printf("Message sent : %s\n", buffer);
+                sendToClient(this, sentMsg);
+                printf("Message sent : %s\n", sentMsg);
                 
-                if(strcmp(buffer, "exit\n") == 0){
+                if(strcmp(sentMsg, "exit\n") == 0){
                     break;
                 }
             }
             // Receiving message
             if(FD_ISSET(this->sockfd, &this->readfds)){
-                clearBuf(buffer, bufSize);
-                nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
-                                  MSG_WAITALL, (struct sockaddr *) &this->cliaddr,
-                                  &this->len);
-                buffer[nBytes] = '\0';
-                printf("Client : %s", buffer);
+                char* receivedMsg = receiveFromClient(this);
+                printf("Client : %s", receivedMsg);
 
-                if(strcmp(buffer, "exit\n") == 0){
+                if(strcmp(receivedMsg, "exit\n") == 0){
                     break;
                 }
             }
         }
     }
-}
-
-void closeServerConnection(struct ServerSide* this){
-    close(this->sockfd);
-    this->valid = 0;
 }
 
 // Driver code
@@ -135,7 +147,6 @@ int main(){
     initializeServerConnection(&server, "192.168.0.2", 15);
     validateServerConnection(&server);
     useServerConnection(&server);
-    closeServerConnection(&server);
     
     return 0;
 }

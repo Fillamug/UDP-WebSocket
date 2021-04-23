@@ -39,10 +39,28 @@ void initializeClientConnection(struct ClientSide* this, char* serverIP, int wai
     this->len = sizeof(this->servaddr);
 }
 
+void closeClientConnection(struct ClientSide* this){
+    close(this->sockfd);
+    this->valid = 0;
+}
+
+int setClientFds(struct ClientSide* this){
+    this->timeout.tv_sec = this->waitTime;
+    this->timeout.tv_usec = 0;
+    FD_ZERO(&this->readfds);
+    FD_SET(this->sockfd, &this->readfds);
+    FD_SET(0, &this->readfds);
+    int activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
+    if(activity <= 0){
+        closeClientConnection(this);
+        return 1;
+    }
+    return 0;
+}
+
 void validateClientConnection(struct ClientSide* this){
     int bufSize = 1024;
     int nBytes;
-    int activity;
     char buffer[bufSize];
 
     // Sending request header
@@ -51,16 +69,7 @@ void validateClientConnection(struct ClientSide* this){
            MSG_CONFIRM, (const struct sockaddr *) &this->servaddr,
            this->len);
            
-    // Setting timer
-    this->timeout.tv_sec = this->waitTime;
-    this->timeout.tv_usec = 0;
-    FD_ZERO(&this->readfds);
-    FD_SET(this->sockfd, &this->readfds);
-    activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
-    if(activity <= 0){
-        close(this->sockfd);
-        return;
-    }
+    if(setClientFds(this)) return;
 
     // Receiving response header
     if(FD_ISSET(this->sockfd, &this->readfds)){
@@ -74,59 +83,52 @@ void validateClientConnection(struct ClientSide* this){
     }
 }
 
-void useClientConnection(struct ClientSide* this){
-    if(this->valid){
-        int bufSize = 1024;
-        int nBytes;
-        int activity;
-        char buffer[bufSize];
-        
-        while(1){
-            // Setting timer
-            this->timeout.tv_sec = this->waitTime;
-            this->timeout.tv_usec = 0;
-            FD_ZERO(&this->readfds);
-            FD_SET(this->sockfd, &this->readfds);
-            FD_SET(0, &this->readfds);
-            activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
-            if(activity <= 0){
-                break;
-            }
-
-            // Sending message
-            if(FD_ISSET(0, &this->readfds)){
-                clearBuf(buffer, bufSize);
-                fgets(buffer, sizeof(buffer), stdin);
-
-                sendto(this->sockfd, (const char *)buffer, strlen(buffer),
+void sendToServer(struct ClientSide* this, char* message){
+    sendto(this->sockfd, (const char *)message, strlen(message),
                        MSG_CONFIRM, (const struct sockaddr *) &this->servaddr,
                        this->len);
-                printf("Message sent : %s\n", buffer);
+}
+
+char* receiveFromServer(struct ClientSide* this){
+    int bufSize = 1024;
+    char buffer[bufSize];
+    int nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
+                      MSG_WAITALL, (struct sockaddr *) &this->servaddr,
+                      &this->len);
+    buffer[nBytes] = '\0';
+    char* message = buffer;
+    return message;
+}
+
+void useClientConnection(struct ClientSide* this){
+    if(this->valid){
+        while(1){
+            // Setting file descriptors
+            if(setClientFds(this)) break;
+            
+            // Sending message
+            if(FD_ISSET(0, &this->readfds)){
+                char sentMsg[1024];
+                fgets(sentMsg, sizeof(sentMsg), stdin);
+
+                sendToServer(this, sentMsg);
+                printf("Message sent : %s\n", sentMsg);
                 
-                if(strcmp(buffer, "exit\n") == 0){
+                if(strcmp(sentMsg, "exit\n") == 0){
                     break;
                 }
             }
             // Receiving message
             if(FD_ISSET(this->sockfd, &this->readfds)){
-                clearBuf(buffer, bufSize);
-                nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
-                                  MSG_WAITALL, (struct sockaddr *) &this->servaddr,
-                                  &this->len);
-                buffer[nBytes] = '\0';
-                printf("Server : %s", buffer);
+                char* receivedMsg = receiveFromServer(this);
+                printf("Server : %s", receivedMsg);
 
-                if(strcmp(buffer, "exit\n") == 0){
+                if(strcmp(receivedMsg, "exit\n") == 0){
                     break;
                 }
             }
         }
     }
-}
-
-void closeClientConnection(struct ClientSide* this){
-    close(this->sockfd);
-    this->valid = 0;
 }
 
 // Driver code
@@ -136,7 +138,6 @@ int main(){
     initializeClientConnection(&client, "192.168.0.2", 15);
     validateClientConnection(&client);
     useClientConnection(&client);
-    closeClientConnection(&client);
     
     return 0;
 }
