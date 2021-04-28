@@ -18,7 +18,7 @@ struct ClientSide {
     fd_set readfds;
 };
 
-void initializeClientConnection(struct ClientSide* this, char* serverIP, int waitTime){
+void initializeClientConnection(struct ClientSide* this, char* serverIP, int port, int waitTime){
     this->valid = 0;
     this->waitTime = waitTime;
     this->version = 1;
@@ -34,7 +34,7 @@ void initializeClientConnection(struct ClientSide* this, char* serverIP, int wai
     // Filling server information
     this->servaddr.sin_family = AF_INET;
     this->servaddr.sin_addr.s_addr = inet_addr(serverIP);
-    this->servaddr.sin_port = htons(8080);
+    this->servaddr.sin_port = htons(port);
 
     this->len = sizeof(this->servaddr);
 }
@@ -101,31 +101,29 @@ char* receiveFromServer(struct ClientSide* this){
 }
 
 void useClientConnection(struct ClientSide* this){
-    if(this->valid){
-        while(1){
-            // Setting file descriptors
-            if(setClientFds(this)) break;
+    while(this->valid){
+        // Setting file descriptors
+        if(setClientFds(this)) break;
+        
+        // Sending message
+        if(FD_ISSET(0, &this->readfds)){
+            char sentMsg[1024];
+            fgets(sentMsg, sizeof(sentMsg), stdin);
             
-            // Sending message
-            if(FD_ISSET(0, &this->readfds)){
-                char sentMsg[1024];
-                fgets(sentMsg, sizeof(sentMsg), stdin);
-
-                sendToServer(this, sentMsg);
-                printf("Message sent : %s\n", sentMsg);
-                
-                if(strcmp(sentMsg, "exit\n") == 0){
-                    break;
-                }
+            sendToServer(this, sentMsg);
+            printf("Message sent : %s\n", sentMsg);
+            
+            if(strcmp(sentMsg, "exit\n") == 0){
+                break;
             }
-            // Receiving message
-            if(FD_ISSET(this->sockfd, &this->readfds)){
-                char* receivedMsg = receiveFromServer(this);
-                printf("Server : %s", receivedMsg);
-
-                if(strcmp(receivedMsg, "exit\n") == 0){
-                    break;
-                }
+        }
+        // Receiving message
+        if(FD_ISSET(this->sockfd, &this->readfds)){
+            char* receivedMsg = receiveFromServer(this);
+            printf("Server : %s", receivedMsg);
+            
+            if(strcmp(receivedMsg, "exit\n") == 0){
+                break;
             }
         }
     }
@@ -135,7 +133,7 @@ void useClientConnection(struct ClientSide* this){
 int main(){
     struct ClientSide client;
     
-    initializeClientConnection(&client, "192.168.0.2", 15);
+    initializeClientConnection(&client, "192.168.0.2", 8080, 15);
     validateClientConnection(&client);
     useClientConnection(&client);
     
