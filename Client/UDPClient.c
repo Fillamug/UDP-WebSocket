@@ -16,6 +16,7 @@ struct ClientSide {
     struct sockaddr_in servaddr;
     struct timeval timeout;
     fd_set readfds;
+    void (*recvFunct)(char*);
 };
 
 void initializeClientConnection(struct ClientSide* this, char* serverIP, int port, int waitTime){
@@ -39,6 +40,10 @@ void initializeClientConnection(struct ClientSide* this, char* serverIP, int por
     this->len = sizeof(this->servaddr);
 }
 
+void setClientFunctions(struct ClientSide* this, void (*recvFunct)(char*)){
+    this->recvFunct = recvFunct;
+}
+
 void closeClientConnection(struct ClientSide* this){
     close(this->sockfd);
     this->valid = 0;
@@ -56,31 +61,6 @@ int setClientFds(struct ClientSide* this){
         return 1;
     }
     return 0;
-}
-
-void validateClientConnection(struct ClientSide* this){
-    int bufSize = 1024;
-    int nBytes;
-    char buffer[bufSize];
-
-    // Sending request header
-    createRequest(buffer, this->version);
-    sendto(this->sockfd, (const char *)buffer, strlen(buffer),
-           MSG_CONFIRM, (const struct sockaddr *) &this->servaddr,
-           this->len);
-           
-    if(setClientFds(this)) return;
-
-    // Receiving response header
-    if(FD_ISSET(this->sockfd, &this->readfds)){
-        clearBuf(buffer, bufSize);
-        nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
-                          MSG_WAITALL, (struct sockaddr *) &this->servaddr,
-                          &this->len);
-        buffer[nBytes] = '\0';
-        int support = parseResponse(buffer);
-        if(support >= 200 && support < 300) this->valid = 1;
-    }
 }
 
 void sendToServer(struct ClientSide* this, char* message){
@@ -120,7 +100,7 @@ void useClientConnection(struct ClientSide* this){
         // Receiving message
         if(FD_ISSET(this->sockfd, &this->readfds)){
             char* receivedMsg = receiveFromServer(this);
-            printf("Server : %s", receivedMsg);
+            this->recvFunct(receivedMsg);
             
             if(strcmp(receivedMsg, "exit\n") == 0){
                 break;
@@ -129,13 +109,45 @@ void useClientConnection(struct ClientSide* this){
     }
 }
 
+void validateClientConnection(struct ClientSide* this){
+    int bufSize = 1024;
+    int nBytes;
+    char buffer[bufSize];
+
+    // Sending request header
+    createRequest(buffer, this->version);
+    sendto(this->sockfd, (const char *)buffer, strlen(buffer),
+           MSG_CONFIRM, (const struct sockaddr *) &this->servaddr,
+           this->len);
+           
+    if(setClientFds(this)) return;
+
+    // Receiving response header
+    if(FD_ISSET(this->sockfd, &this->readfds)){
+        clearBuf(buffer, bufSize);
+        nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
+                          MSG_WAITALL, (struct sockaddr *) &this->servaddr,
+                          &this->len);
+        buffer[nBytes] = '\0';
+        int support = parseResponse(buffer);
+        if(support >= 200 && support < 300){
+            this->valid = 1;
+            useClientConnection(this);
+        }
+    }
+}
+
+void recvMessage(char* message){
+    printf("Client : %s", message);
+}
+
 // Driver code
 int main(){
     struct ClientSide client;
     
     initializeClientConnection(&client, "192.168.0.2", 8080, 15);
+    setClientFunctions(&client, recvMessage);
     validateClientConnection(&client);
-    useClientConnection(&client);
     
     return 0;
 }

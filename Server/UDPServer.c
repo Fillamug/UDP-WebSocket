@@ -17,6 +17,7 @@ struct ServerSide {
     struct sockaddr_in servaddr, cliaddr;
     struct timeval timeout;
     fd_set readfds;
+    void (*recvFunct)(char*);
 };
 
 void setSocketInfo(struct ServerSide* this){
@@ -59,6 +60,10 @@ void initializeServerConnection(struct ServerSide* this, char* serverIP, int por
     this->len = sizeof(this->cliaddr);
     
     setSocketInfo(this);
+}
+
+void setServerFunctions(struct ServerSide* this, void (*recvFunct)(char*)){
+    this->recvFunct = recvFunct;
 }
 
 void closeServerConnection(struct ServerSide* this){
@@ -115,7 +120,7 @@ void useServerConnection(struct ServerSide* this){
         // Receiving message
         if(FD_ISSET(this->sockfd, &this->readfds)){
             char* receivedMsg = receiveFromClient(this);
-            printf("Client : %s", receivedMsg);
+            this->recvFunct(receivedMsg);
             
             if(strcmp(receivedMsg, "exit\n") == 0){
                 break;
@@ -169,11 +174,16 @@ void validateServerConnection(struct ServerSide* this){
     }
 }
 
+void recvMessage(char* message){
+    printf("Client : %s", message);
+}
+
 // Driver code
 int main(){
     struct ServerSide server;
     
     initializeServerConnection(&server, "192.168.0.2", 8080, 15, 10);
+    setServerFunctions(&server, recvMessage);
     validateServerConnection(&server);
     
     return 0;
