@@ -9,16 +9,54 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <memory.h>
+#include <json-c/json.h>
 #include <pthread.h>
-#include "ServerFileHandling.h"
+#include "UDPServer.h"
 
-struct ServerSide {
-    int sockfd, len, valid, waitTime, version, support, maxClients;
-    struct sockaddr_in servaddr, cliaddr;
-    struct timeval timeout;
-    fd_set readfds;
-    void (*recvFunct)(char*);
-};
+// Function to parse request header
+int parseRequest(char* buffer){
+    struct json_object* response;
+    struct json_object* jsonSocket;
+    struct json_object* version;
+    int vNum = 0;
+
+    response = json_tokener_parse(buffer);
+
+    json_object_object_get_ex(response, "JSONSocket", &jsonSocket);
+    json_object_object_get_ex(jsonSocket, "version", &version);
+    vNum = json_object_get_int(version);
+
+    return vNum;
+}
+
+// Function to create response header
+void createResponse(char* buffer, int support, int valid){
+    struct json_object* response;
+    struct json_object* jsonSocket;
+    struct json_object* status;
+    struct json_object* message;
+    struct json_object* version;
+    if(valid){
+        status = json_object_new_int(200);
+        message = json_object_new_string("OK");
+        version = json_object_new_int(support);
+    }
+    else{
+        status = json_object_new_int(505);
+        message = json_object_new_string("Version not supported");
+        version = json_object_new_int(support);
+    }
+    response = json_object_new_object();
+    jsonSocket = json_object_new_object();
+    json_object_object_add(jsonSocket, "status", status);
+    json_object_object_add(jsonSocket, "message", message);
+    json_object_object_add(jsonSocket, "version", version);
+    json_object_object_add(response, "JSONSocket", jsonSocket);
+    const char* temp = json_object_to_json_string_ext(response, JSON_C_TO_STRING_PRETTY);
+    for (int i = 0; i < strlen(temp); i++) {
+        buffer[i] = temp[i];
+    }
+}
 
 void setSocketInfo(struct ServerSide* this){
     // Creating socket file descriptor
@@ -62,8 +100,10 @@ void initializeServerConnection(struct ServerSide* this, char* serverIP, int por
     setSocketInfo(this);
 }
 
-void setServerFunctions(struct ServerSide* this, void (*recvFunct)(char*)){
+void setServerFunctions(struct ServerSide* this, int input, void (*recvFunct)(char*), void (*sendFunct)(char*, int)){
+    this->input = input;
     this->recvFunct = recvFunct;
+    this->sendFunct = sendFunct;
 }
 
 void closeServerConnection(struct ServerSide* this){
@@ -76,7 +116,7 @@ int setServerFds(struct ServerSide* this){
     this->timeout.tv_usec = 0;
     FD_ZERO(&this->readfds);
     FD_SET(this->sockfd, &this->readfds);
-    FD_SET(0, &this->readfds);
+    FD_SET(this->input, &this->readfds);
     int activity = select( this->sockfd + 1 , &this->readfds , NULL , NULL , &this->timeout);
     if(activity <= 0){
         closeServerConnection(this);
@@ -106,25 +146,17 @@ void useServerConnection(struct ServerSide* this){
         if(setServerFds(this)) break;
         
         // Sending message
-        if(FD_ISSET(0, &this->readfds)){
-            char sentMsg[1024];
-            fgets(sentMsg, sizeof(sentMsg), stdin);
+        if(FD_ISSET(this->input, &this->readfds)){
+            int bufSize = 1024;
+            char sentMsg[bufSize];
             
+            this->sendFunct(sentMsg, sizeof(sentMsg));
             sendToClient(this, sentMsg);
-            printf("Message sent : %s\n", sentMsg);
-            
-            if(strcmp(sentMsg, "exit\n") == 0){
-                break;
-            }
         }
         // Receiving message
         if(FD_ISSET(this->sockfd, &this->readfds)){
             char* receivedMsg = receiveFromClient(this);
             this->recvFunct(receivedMsg);
-            
-            if(strcmp(receivedMsg, "exit\n") == 0){
-                break;
-            }
         }
     }
 }
@@ -138,7 +170,6 @@ void* createSocket(void* server){
     connect(this->sockfd, (const struct sockaddr *) &this->cliaddr, this->len);
     
     int bufSize = 1024;
-    int nBytes;
     char buffer[bufSize];
     
     // Sending response header
@@ -152,11 +183,10 @@ void validateServerConnection(struct ServerSide* this){
     pthread_t threads[this->maxClients];
     for(int i=0; i<this->maxClients; i++){
         int bufSize = 1024;
-        int nBytes;
         char buffer[bufSize];
     
         // Receiving request header
-        nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
+        int nBytes = recvfrom(this->sockfd, (char *)buffer, bufSize,
                           MSG_WAITALL, ( struct sockaddr *) &this->cliaddr,
                           &this->len);
         buffer[nBytes] = '\0';
@@ -172,19 +202,4 @@ void validateServerConnection(struct ServerSide* this){
     for(int i=0; i<this->maxClients; i++){
         pthread_join(threads[i], NULL);
     }
-}
-
-void recvMessage(char* message){
-    printf("Client : %s", message);
-}
-
-// Driver code
-int main(){
-    struct ServerSide server;
-    
-    initializeServerConnection(&server, "192.168.0.2", 8080, 15, 10);
-    setServerFunctions(&server, recvMessage);
-    validateServerConnection(&server);
-    
-    return 0;
 }
