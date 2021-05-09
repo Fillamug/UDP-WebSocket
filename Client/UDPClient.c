@@ -33,7 +33,7 @@ void createRequest(char* buffer, int verClient){
     struct json_object* request;
     struct json_object* jsonSocket;
     struct json_object* version;
-    version = json_object_new_int(1);
+    version = json_object_new_int(verClient);
 
     request = json_object_new_object();
     jsonSocket = json_object_new_object();
