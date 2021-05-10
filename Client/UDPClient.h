@@ -7,7 +7,7 @@ struct ClientSide {
     int sockfd, len, valid, waitTime, version, input;
     struct sockaddr_in servaddr;
     struct timeval timeout;
-    fd_set readfds, writefds;
+    fd_set readfds;
     void (*recvFunct)(char*);
     void (*sendFunct)(char*, int);
 };
