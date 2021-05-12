@@ -2,6 +2,14 @@
 This project is the implemetation of the JSONSocket.v1 protocol, with the usage of UDP, on Linux operating system.
 
 ## Table of Contents
+* [General Information](#general-information)
+* [Technologies used](#technologies-used)
+* [Features](#features)
+* [Setup](#setup)
+* [Usage](#usage)
+* [Project Status](#project-status)
+* [Room for improvement](#room-for-improvement)
+* [Acknowledgements](#acknowledgements)
 
 ## General Information
 The main goal of JSONSocket is to be deployed as the streaming transport protocol in application-layer service meshes, where the JSONSocket headers attached to each stream can be used to communicate rich connection metadata/context across micro-services. This makes it possible to move out-of-band control channels to in-band signaling using JSONSocket, even when the underlying transport layer does not provide such a feature (e.g., UDP or UNIX domain sockets). In the case of UDP-WebSocket I used UDP on Linux operating system for the implementation of the protocol.
@@ -26,6 +34,7 @@ After you've installed it, you can generate the library with the provided Makefi
 
 ## Usage
 You can start the server side of the projects simply by typing ```./Server/server``` in your console. Similarly you can start the client side by typing in ```./Client/client```.
+If you no longer need the generated files, you can delete them by using the ```make clear``` command in the project's root folder.
 
 ## Project Status
 The projects fully implemented the JSONSocket.v1 protocol for UDP, however as the specification progresses, so can the project.
