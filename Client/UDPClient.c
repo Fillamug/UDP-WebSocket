@@ -40,9 +40,7 @@ void createRequest(char* buffer, int verClient){
     json_object_object_add(jsonSocket, "version", version);
     json_object_object_add(request, "JSONSocket", jsonSocket);
     const char* temp = json_object_to_json_string_ext(request, JSON_C_TO_STRING_PRETTY);
-    for (int i = 0; i < strlen(temp); i++) {
-        buffer[i] = temp[i];
-    }
+    strcpy(buffer, temp);
 }
 
 void initializeClientConnection(struct ClientSide* this, char* serverIP, int port, int waitTime){

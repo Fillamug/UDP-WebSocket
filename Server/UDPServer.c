@@ -53,9 +53,7 @@ void createResponse(char* buffer, int support, int valid){
     json_object_object_add(jsonSocket, "version", version);
     json_object_object_add(response, "JSONSocket", jsonSocket);
     const char* temp = json_object_to_json_string_ext(response, JSON_C_TO_STRING_PRETTY);
-    for (int i = 0; i < strlen(temp); i++) {
-        buffer[i] = temp[i];
-    }
+    strcpy(buffer, temp);
 }
 
 void setSocketInfo(struct ServerSide* this){
